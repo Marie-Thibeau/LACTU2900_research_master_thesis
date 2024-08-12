@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Bermudan put option with one interest rate curve
+Bermudan put option with multiple interest rate curves
 
 @author: Marie Thibeau
 """
@@ -40,8 +40,8 @@ def r0(t,b0,b10,b11,c1):
 def P0(t,b0,b10,b11,c1):
     # price of a zero-coupon bond of maturity t
     out1 = np.zeros_like(t,dtype=float)
-    if (type(t)==np.ndarray): 
-        out1[(t!=0)] = r0(t[(t!=0)],b0,b10,b11,c1)  
+    if (type(t)==np.ndarray):
+        out1[(t!=0)] = r0(t[(t!=0)],b0[(t!=0)],b10[(t!=0)],b11[(t!=0)],c1[(t!=0)])  
     else:  
         if (t==0): 
             out1 = 0 
@@ -73,8 +73,8 @@ class FNN(tf.keras.Model):
         self.output_layer = tf.keras.layers.Dense(1, activation=None)
         
     def call(self,inputs):
-        t, rt, St, kappa, sigma_r, sigma_S, rho = inputs
-        u = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho], axis=1)
+        t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1 = inputs
+        u = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1], axis=1)
         for layer in self.dense_layers[0:]:
             u = layer(u)
         u = self.output_layer(u)
@@ -90,8 +90,8 @@ class RNN(tf.keras.Model):
         self.output_layer = tf.keras.layers.Dense(1, activation=None)
         
     def call(self,inputs):
-        t, rt, St, kappa, sigma_r, sigma_S, rho = inputs
-        u0 = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho], axis=1)
+        t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1 = inputs
+        u0 = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1], axis=1)
         u = self.dense_layers[0](u0)
         for layer in self.dense_layers[1:]:
             u = layer(tf.concat([u,u0],axis=1))
@@ -117,8 +117,8 @@ class DGM(tf.keras.Model):
         self.Wf  = tf.keras.layers.Dense(1)
 
     def call(self, inputs):
-        t, rt, St, kappa, sigma_r, sigma_S, rho = inputs
-        x   = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho], axis=1)
+        t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1 = inputs
+        x   = tf.concat([t, rt, St, kappa, sigma_r, sigma_S, rho, b0, b10, b11, c1], axis=1)
         S1  = self.Sw(x)
         out = S1
         for i in range(1, self.num_hidden_layers):
@@ -133,10 +133,10 @@ class DGM(tf.keras.Model):
 
 #%% Definition of the loss function
 
-def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
-                             rT, ST, kappaT, sigma_rT, sigma_ST, rhoT, HT,
-                         te, re, Se, kappae, sigma_re, sigma_Se, rhoe, He,
-                         T, sc, ns, loss_weights):
+def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,  b0,  b10,  b11,  c1,
+                             rT, ST, kappaT, sigma_rT, sigma_ST, rhoT, b0T, b10T, b11T, c1T, HT,
+                         te, re, Se, kappae, sigma_re, sigma_Se, rhoe, b0e, b10e, b11e, c1e, He,
+                         T, sc, loss_weights):
     
     # conversion to tensors
     t_tf        = tf.convert_to_tensor(t, dtype=tf.float32)
@@ -146,6 +146,10 @@ def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
     sigma_r_tf  = tf.convert_to_tensor(sigma_r, dtype=tf.float32)
     sigma_S_tf  = tf.convert_to_tensor(sigma_S, dtype=tf.float32)
     rho_tf      = tf.convert_to_tensor(rho, dtype=tf.float32)
+    b0_tf       = tf.convert_to_tensor(b0, dtype=tf.float32)
+    b10_tf      = tf.convert_to_tensor(b10, dtype=tf.float32)
+    b11_tf      = tf.convert_to_tensor(b11, dtype=tf.float32)
+    c1_tf       = tf.convert_to_tensor(c1, dtype=tf.float32)
     T_tf        = tf.convert_to_tensor(T*np.ones_like(rT), dtype=tf.float32)
     rT_tf       = tf.convert_to_tensor(rT, dtype=tf.float32)
     ST_tf       = tf.convert_to_tensor(ST, dtype=tf.float32)
@@ -153,6 +157,10 @@ def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
     sigma_rT_tf = tf.convert_to_tensor(sigma_rT, dtype=tf.float32)
     sigma_ST_tf = tf.convert_to_tensor(sigma_ST, dtype=tf.float32)
     rhoT_tf     = tf.convert_to_tensor(rhoT, dtype=tf.float32)
+    b0T_tf      = tf.convert_to_tensor(b0T, dtype=tf.float32)
+    b10T_tf     = tf.convert_to_tensor(b10T, dtype=tf.float32)
+    b11T_tf     = tf.convert_to_tensor(b11T, dtype=tf.float32)
+    c1T_tf      = tf.convert_to_tensor(c1T, dtype=tf.float32)
     HT_tf       = tf.convert_to_tensor(HT, dtype=tf.float32)
     te_tf       = tf.convert_to_tensor(te, dtype=tf.float32)
     re_tf       = tf.convert_to_tensor(re, dtype=tf.float32)
@@ -161,15 +169,19 @@ def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
     sigma_re_tf = tf.convert_to_tensor(sigma_re, dtype=tf.float32)
     sigma_Se_tf = tf.convert_to_tensor(sigma_Se, dtype=tf.float32)
     rhoe_tf     = tf.convert_to_tensor(rhoe, dtype=tf.float32)
+    b0e_tf      = tf.convert_to_tensor(b0e, dtype=tf.float32)
+    b10e_tf     = tf.convert_to_tensor(b10e, dtype=tf.float32)
+    b11e_tf     = tf.convert_to_tensor(b11e, dtype=tf.float32)
+    c1e_tf      = tf.convert_to_tensor(c1e, dtype=tf.float32)
     He_tf       = tf.convert_to_tensor(He, dtype=tf.float32)
     
     # calculation of gamma(t)
-    gamma_tf = gamma(t_tf,kappa_tf,sigma_r_tf,ns['b0'],ns['b10'],ns['b11'],ns['c1'])
+    gamma_tf = gamma(t_tf,kappa_tf,sigma_r_tf,b0_tf,b10_tf,b11_tf,c1_tf)
     
     # calculation of partial derivatives for scaled FK equation
     with tf.GradientTape(persistent=True) as tape1:
         tape1.watch([rt_tf,St_tf,t_tf])
-        u_pred = model([t_tf, rt_tf, St_tf, kappa_tf, sigma_r_tf, sigma_S_tf, rho_tf])
+        u_pred = model([t_tf, rt_tf, St_tf, kappa_tf, sigma_r_tf, sigma_S_tf, rho_tf, b0_tf, b10_tf, b11_tf, c1_tf])
         du   = tape1.gradient(u_pred, [rt_tf,St_tf,t_tf])
         u_r  = du[0]
         u_S  = du[1]
@@ -187,12 +199,12 @@ def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
     L_D = tf.reduce_mean(tf.square(residual_D))
     
     # maturity loss
-    u_pred_T   = model([T_tf, rT_tf, ST_tf, kappaT_tf, sigma_rT_tf, sigma_ST_tf, rhoT_tf])
+    u_pred_T   = model([T_tf, rT_tf, ST_tf, kappaT_tf, sigma_rT_tf, sigma_ST_tf, rhoT_tf, b0T_tf, b10T_tf, b11T_tf, c1T_tf])
     residual_T = u_pred_T - HT_tf
     L_T        = tf.reduce_mean(tf.square(residual_T))
     
     # exact loss
-    u_pred_e   = model([te_tf, re_tf, Se_tf, kappae_tf, sigma_re_tf, sigma_Se_tf, rhoe_tf])
+    u_pred_e   = model([te_tf, re_tf, Se_tf, kappae_tf, sigma_re_tf, sigma_Se_tf, rhoe_tf, b0e_tf, b10e_tf, b11e_tf, c1e_tf])
     residual_e = u_pred_e - He_tf
     L_e        = tf.reduce_mean(tf.square(residual_e))
     L_e        = 0 # HERE, remove if using exact loss
@@ -209,10 +221,10 @@ def loss_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
 
 #%% Definition of the training function (used for each neural network)
 
-def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
-                              rT, ST, kappaT, sigma_rT, sigma_ST, rhoT, HT,
-                          te, re, Se, kappae, sigma_re, sigma_Se, rhoe, He,
-                          T, sc, ns, loss_weights, epochs=10000, lr=0.001, batch_perc=0.20):
+def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,  b0,  b10,  b11,  c1,
+                              rT, ST, kappaT, sigma_rT, sigma_ST, rhoT, b0T, b10T, b11T, c1T, HT,
+                          te, re, Se, kappae, sigma_re, sigma_Se, rhoe, b0e, b10e, b11e, c1e, He,
+                          T, sc, loss_weights, epochs=10000, lr=0.001, batch_perc=0.20):
     
     # optimizer choice
     optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
@@ -254,6 +266,10 @@ def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
             sigma_r_batch = sigma_r[batch_indices]
             sigma_S_batch = sigma_S[batch_indices]
             rho_batch     = rho[batch_indices]
+            b0_batch      = b0[batch_indices]
+            b10_batch     = b10[batch_indices]
+            b11_batch     = b11[batch_indices]
+            c1_batch      = c1[batch_indices]
 
             # inputs for L_T
             rT_batch       = rT[batch_indicesT]
@@ -262,6 +278,10 @@ def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
             sigma_rT_batch = sigma_rT[batch_indicesT]
             sigma_ST_batch = sigma_ST[batch_indicesT]
             rhoT_batch     = rhoT[batch_indicesT]
+            b0T_batch      = b0T[batch_indicesT]
+            b10T_batch     = b10T[batch_indicesT]
+            b11T_batch     = b11T[batch_indicesT]
+            c1T_batch      = c1T[batch_indicesT]
             HT_batch       = HT[batch_indicesT]
             
             # inputs for L_e
@@ -272,16 +292,20 @@ def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
             sigma_re_batch = sigma_re[batch_indicese]
             sigma_Se_batch = sigma_Se[batch_indicese]
             rhoe_batch     = rhoe[batch_indicese]
+            b0e_batch      = b0e[batch_indicese]
+            b10e_batch     = b10e[batch_indicese]
+            b11e_batch     = b11e[batch_indicese]
+            c1e_batch      = c1e[batch_indicese]
             He_batch       = He[batch_indicese]
             
             # loss calculation
             with tf.GradientTape() as tape:
                 # computation of L_weighted, L_D, L_T, L_e, L_tot
                 loss, L_D, L_T, L_e, L_tot = loss_function(model, 
-                                                           t_batch,  rt_batch, St_batch, kappa_batch,  sigma_r_batch,  sigma_S_batch,  rho_batch,
-                                                                     rT_batch, ST_batch, kappaT_batch, sigma_rT_batch, sigma_ST_batch, rhoT_batch, HT_batch,
-                                                           te_batch, re_batch, Se_batch, kappae_batch, sigma_re_batch, sigma_Se_batch, rhoe_batch, He_batch,
-                                                           T, sc, ns, loss_weights)
+                                                           t_batch,  rt_batch, St_batch, kappa_batch,  sigma_r_batch,  sigma_S_batch,  rho_batch,  b0_batch,  b10_batch,  b11_batch,  c1_batch,
+                                                                     rT_batch, ST_batch, kappaT_batch, sigma_rT_batch, sigma_ST_batch, rhoT_batch, b0T_batch, b10T_batch, b11T_batch, c1T_batch, HT_batch,
+                                                           te_batch, re_batch, Se_batch, kappae_batch, sigma_re_batch, sigma_Se_batch, rhoe_batch, b0e_batch, b10e_batch, b11e_batch, c1e_batch, He_batch,
+                                                           T, sc, loss_weights)
             
             gradients = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
@@ -303,10 +327,10 @@ def train_function(model, t,  rt, St, kappa,  sigma_r,  sigma_S,  rho,
 
 #%% Training the neural networks or loading weights : loop on the time steps/neural networks
 
-def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho,
-                                     rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT,
-                           te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, He,         
-                           I, sc, ns, loss_weights, K, train_phases, TRAIN=True):
+def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho,  b0,  b10,  b11,  c1,
+                                     rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT, b0T, b10T, b11T, c1T,
+                           te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, b0e, b10e, b11e, c1e, He,         
+                           I, sc, loss_weights, K, train_phases, TRAIN=True):
     
     T = I[-1]
     num_samp    = int(np.shape(rt_tilde)[0]/T)
@@ -336,6 +360,10 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
         sigma_r_i  = sigma_r[num_samp*i:num_samp*(i+1)]
         sigma_S_i  = sigma_S[num_samp*i:num_samp*(i+1)]
         rho_i      = rho[num_samp*i:num_samp*(i+1)]
+        b0_i       = b0[num_samp*i:num_samp*(i+1)]
+        b10_i      = b10[num_samp*i:num_samp*(i+1)]
+        b11_i      = b11[num_samp*i:num_samp*(i+1)]
+        c1_i       = c1[num_samp*i:num_samp*(i+1)]
         
         # inputs for maturity loss
         rT_tilde_i = rT_tilde[num_sampT*i:num_sampT*(i+1)]
@@ -344,11 +372,15 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
         sigma_rT_i = sigma_rT[num_sampT*i:num_sampT*(i+1)]
         sigma_ST_i = sigma_ST[num_sampT*i:num_sampT*(i+1)]
         rhoT_i     = rhoT[num_sampT*i:num_sampT*(i+1)]
+        b0T_i      = b0T[num_sampT*i:num_sampT*(i+1)]
+        b10T_i     = b10T[num_sampT*i:num_sampT*(i+1)]
+        b11T_i     = b11T[num_sampT*i:num_sampT*(i+1)]
+        c1T_i      = c1T[num_sampT*i:num_sampT*(i+1)]
         if I[i+1]==T:
             HT_i = np.maximum(K-(ST_tilde_i-sc["aS"])/sc["bS"],np.zeros_like(K-(ST_tilde_i-sc["aS"])/sc["bS"]))
         else:
             N_temp  = models[T-i-2]
-            Nv_prev = N_temp([T_tilde_i, rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i])
+            Nv_prev = N_temp([T_tilde_i, rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i, b0T_i, b10T_i, b11T_i, c1T_i])
             HT_i    = np.max([np.maximum(K-(ST_tilde_i-sc["aS"])/sc["bS"],np.zeros_like(K-(ST_tilde_i-sc["aS"])/sc["bS"])),Nv_prev],axis=0)
         
         #inputs for exact loss
@@ -359,6 +391,10 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
         sigma_re_i = sigma_re[num_sampe*i:num_sampe*(i+1)]
         sigma_Se_i = sigma_Se[num_sampe*i:num_sampe*(i+1)]
         rhoe_i     = rhoe[num_sampe*i:num_sampe*(i+1)]
+        b0e_i      = b0e[num_sampe*i:num_sampe*(i+1)]
+        b10e_i     = b10e[num_sampe*i:num_sampe*(i+1)]
+        b11e_i     = b11e[num_sampe*i:num_sampe*(i+1)]
+        c1e_i      = c1e[num_sampe*i:num_sampe*(i+1)]
         He_i       = He[num_sampe*i:num_sampe*(i+1)]
         
         if TRAIN:
@@ -368,10 +404,10 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
                 for ep in range(tr):
                     n_tot_epochs += int(train_phases[ep,0])
                 n_epochs = int(train_phases[tr,0])
-                losses_tab[i,n_tot_epochs:n_tot_epochs+n_epochs,:] = train_function(N, t_tilde_i,  rt_tilde_i, St_tilde_i, kappa_i,  sigma_r_i,  sigma_S_i,  rho_i, 
-                                                                                                   rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i, HT_i, 
-                                                                                       te_tilde_i, re_tilde_i, Se_tilde_i, kappae_i, sigma_re_i, sigma_Se_i, rhoe_i, He_i, 
-                                                                                       sc['ah']+sc['bh']*I[i+1], sc, ns, loss_weights, 
+                losses_tab[i,n_tot_epochs:n_tot_epochs+n_epochs,:] = train_function(N, t_tilde_i,  rt_tilde_i, St_tilde_i, kappa_i,  sigma_r_i,  sigma_S_i,  rho_i,  b0_i,  b10_i,  b11_i,  c1_i, 
+                                                                                                   rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i, b0T_i, b10T_i, b11T_i, c1T_i, HT_i, 
+                                                                                       te_tilde_i, re_tilde_i, Se_tilde_i, kappae_i, sigma_re_i, sigma_Se_i, rhoe_i, b0e_i, b10e_i, b11e_i, c1e_i, He_i, 
+                                                                                       sc['ah']+sc['bh']*I[i+1], sc, loss_weights, 
                                                                                        epochs=n_epochs, lr=train_phases[tr,1], batch_perc=0.34)
             toc = timeit.default_timer()
             train_times[i] = toc-tic
@@ -411,7 +447,7 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
 
         else:
             # initializing the neural network (tmp not used after)
-            tmp = N([t_tilde_i, rt_tilde_i, St_tilde_i, kappa_i, sigma_r_i, sigma_S_i, rho_i])
+            tmp = N([t_tilde_i, rt_tilde_i, St_tilde_i, kappa_i, sigma_r_i, sigma_S_i, rho_i, b0_i, b10_i, b11_i, c1_i,])
             # loading the calibrated weights
             N.load_weights(Directory_name +"/" + weight_name + "__" + str(i) + ".h5")
             if i==T-1:
@@ -420,10 +456,10 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
                 by = np.load(Directory_name +"/" + scaling_by_name)
 
             # running only 10 epochs for getting the losses
-            losses_tab[i,:10,:] = train_function(N, t_tilde_i,  rt_tilde_i, St_tilde_i, kappa_i,  sigma_r_i,  sigma_S_i,  rho_i, 
-                                                                rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i, HT_i, 
-                                                    te_tilde_i, re_tilde_i, Se_tilde_i, kappae_i, sigma_re_i, sigma_Se_i, rhoe_i, He_i, 
-                                                    sc['ah']+sc['bh']*I[i+1], sc, ns, loss_weights, 
+            losses_tab[i,:10,:] = train_function(N, t_tilde_i,  rt_tilde_i, St_tilde_i, kappa_i,  sigma_r_i,  sigma_S_i,  rho_i,  b0_i,  b10_i,  b11_i,  c1_i, 
+                                                                rT_tilde_i, ST_tilde_i, kappaT_i, sigma_rT_i, sigma_ST_i, rhoT_i, b0T_i, b10T_i, b11T_i, c1T_i, HT_i, 
+                                                    te_tilde_i, re_tilde_i, Se_tilde_i, kappae_i, sigma_re_i, sigma_Se_i, rhoe_i, b0e_i, b10e_i, b11e_i, c1e_i, He_i, 
+                                                    sc['ah']+sc['bh']*I[i+1], sc, loss_weights,  
                                                     epochs=10, lr=train_phases[-1,1], batch_perc=0.34)
             losses_tab = losses_tab[:,:10,:]
         
@@ -438,10 +474,11 @@ def on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma
 #%% Definition of parameters and range values
 
 # Nelson-Siegel parameters
-b0  =  0.03974889670677964
-b10 =  0.0014721430763244212
-b11 = -0.01693616284948873
-c1  =  0.4222897254760573
+b0_opt    =  0.03974889670677964
+b10_opt   =  0.0014721430763244212
+b11_opt   = -0.01693616284948873
+c1_opt    =  0.4222897254760573
+delta     =  0.4                   # relative delta around the tru NS parameters used for determining the range
 
 # Lower and upper values of parameters and state varaibles
 r_l       =  0.005; r_u       = 0.07  # stochastic interest rate
@@ -450,6 +487,11 @@ kappa_l   =  0.5;   kappa_u   = 2     # mean-reverting phenomenon of rt
 sigma_r_l =  0.002; sigma_r_u = 0.02  # standard deviation of rt
 sigma_S_l =  0.02;  sigma_S_u = 0.3   # standard deviation of St
 rho_l     = -0.8;   rho_u     = 0.8   # correlation between rt and St
+# NS parameters
+b0_l  = b0_opt*(1-delta);  b0_u  = b0_opt*(1+delta)  
+b10_l = b10_opt*(1-delta); b10_u = b10_opt*(1+delta)
+b11_l = b11_opt*(1-delta); b11_u = b11_opt*(1+delta)
+c1_l  = c1_opt*(1-delta);  c1_u  = c1_opt*(1+delta)
 
 # Fixed parameters
 T = 5                                 # maturity of the option
@@ -486,7 +528,7 @@ lr_4 = 0.0001; epochs_4 = 1000
 train_phases = np.array([[epochs_1,lr_1],[epochs_2,lr_2],[epochs_3,lr_3],[epochs_4,lr_4]])
 
 # Directory and file names for saving weights, scaling parameters and results
-Directory_name = "Berm_one_gamma__"+str(T)+"_"+str(n)+"__"+NN_type+"_"+str(num_hidden_layers)+"_"+str(num_neurons)+"__"+str(num_samples)+"_"+str(num_samples_bound)+"_"+str(num_samples_exact)+"__"+str(inner_loss_weight)+"_"+str(maturity_loss_weight)+"_"+str(exact_loss_weight)
+Directory_name = "Berm_multi_gamma__"+str(T)+"_"+str(n)+"__"+NN_type+"_"+str(num_hidden_layers)+"_"+str(num_neurons)+"__"+str(num_samples)+"_"+str(num_samples_bound)+"_"+str(num_samples_exact)+"__"+str(inner_loss_weight)+"_"+str(maturity_loss_weight)+"_"+str(exact_loss_weight)
 exists = os.path.exists(Directory_name)
 if not exists:
     os.mkdir(Directory_name)
@@ -517,6 +559,10 @@ kappa   = np.random.uniform(kappa_l, kappa_u, tot_num_samp).reshape(-1, 1)
 sigma_r = np.random.uniform(sigma_r_l, sigma_r_u, tot_num_samp).reshape(-1, 1)
 sigma_S = np.random.uniform(sigma_S_l, sigma_S_u, tot_num_samp).reshape(-1, 1)
 rho     = np.random.uniform(rho_l, rho_u, tot_num_samp).reshape(-1, 1)
+b0      = np.random.uniform(b0_l,b0_u, tot_num_samp).reshape(-1,1)
+b10     = np.random.uniform(b10_l,b10_u, tot_num_samp).reshape(-1,1)
+b11     = np.random.uniform(b11_l,b11_u, tot_num_samp).reshape(-1,1)
+c1      = np.random.uniform(c1_l,c1_u, tot_num_samp).reshape(-1,1)
 # scaling of state variables
 rbar = np.mean(rt); Sr = np.std(rt)
 Sbar = np.mean(St); SS = np.std(St)
@@ -536,6 +582,10 @@ kappaT   = np.random.uniform(kappa_l, kappa_u, tot_num_sampT).reshape(-1, 1)
 sigma_rT = np.random.uniform(sigma_r_l, sigma_r_u, tot_num_sampT).reshape(-1, 1)
 sigma_ST = np.random.uniform(sigma_S_l, sigma_S_u, tot_num_sampT).reshape(-1, 1)
 rhoT     = np.random.uniform(rho_l, rho_u, tot_num_sampT).reshape(-1, 1)
+b0T      = np.random.uniform(b0_l,b0_u, tot_num_sampT).reshape(-1, 1)
+b10T     = np.random.uniform(b10_l,b10_u, tot_num_sampT).reshape(-1, 1)
+b11T     = np.random.uniform(b11_l,b11_u, tot_num_sampT).reshape(-1, 1)
+c1T      = np.random.uniform(c1_l,c1_u, tot_num_sampT).reshape(-1, 1)
 # scaling of state variables
 rT_tilde = ar+br*rT
 ST_tilde = aS+bS*ST
@@ -551,6 +601,10 @@ kappae   = np.random.uniform(kappa_l, kappa_u, tot_num_sampe).reshape(-1, 1)
 sigma_re = np.random.uniform(sigma_r_l, sigma_r_u, tot_num_sampe).reshape(-1, 1)
 sigma_Se = np.random.uniform(sigma_S_l, sigma_S_u, tot_num_sampe).reshape(-1, 1)
 rhoe     = np.random.uniform(rho_l, rho_u, tot_num_sampe).reshape(-1, 1)
+b0e      = np.random.uniform(b0_l,b0_u, tot_num_sampe).reshape(-1, 1)
+b10e     = np.random.uniform(b10_l,b10_u, tot_num_sampe).reshape(-1, 1)
+b11e     = np.random.uniform(b11_l,b11_u, tot_num_sampe).reshape(-1, 1)
+c1e      = np.random.uniform(c1_l,c1_u, tot_num_sampe).reshape(-1, 1)
 # scaling of state variables
 re_tilde = ar+br*re
 Se_tilde = aS+bS*Se
@@ -560,9 +614,8 @@ He = np.zeros(tot_num_sampe).reshape(-1, 1) # HERE
 
 #%% Initialization of a new model
 
-# dictionnary for scaling parameters and Nelson-Siegel parameters
+# dictionnary for scaling parameters
 sc = {'ar':ar, 'br':br, 'aS':aS, 'bS':bS, 'ah':ah, 'bh':bh}
-ns = {'b0':b0, 'b10':b10, 'b11':b11, 'c1':c1}
 
 models = np.array([])
 for i in range(T):
@@ -578,15 +631,15 @@ for i in range(T):
 TRAIN = False
 
 if TRAIN:
-    models_out, train_times, losses_table = on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho, 
-                                                                             rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT, 
-                                                                   te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, He, 
-                                                                   I, sc, ns, loss_weights, K, train_phases, TRAIN=True)
+    models_out, train_times, losses_table = on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho,  b0,  b10,  b11,  c1, 
+                                                                             rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT, b0T, b10T, b11T, c1T, 
+                                                                   te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, b0e, b10e, b11e, c1e, He, 
+                                                                   I, sc, loss_weights, K, train_phases, TRAIN=True)
 else:
-    models_out, ay, by, losses_table = on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho, 
-                                                                        rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT, 
-                                                              te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, He, 
-                                                              I, sc, ns, loss_weights, K, train_phases, TRAIN=False)
+    models_out, ay, by, losses_table = on_all_periods(models, t_tilde,  rt_tilde, St_tilde, kappa,  sigma_r,  sigma_S,  rho,  b0,  b10,  b11,  c1, 
+                                                                        rT_tilde, ST_tilde, kappaT, sigma_rT, sigma_ST, rhoT, b0T, b10T, b11T, c1T, 
+                                                              te_tilde, re_tilde, Se_tilde, kappae, sigma_re, sigma_Se, rhoe, b0e, b10e, b11e, c1e, He, 
+                                                              I, sc, loss_weights, K, train_phases, TRAIN=False)
     train_times = np.zeros(n)
     
 #%% Validation: comparison with another pricing method
@@ -613,6 +666,10 @@ kappa_test   = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(rt_test).reshape(-1, 1)
 rho_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b0_test      = np.zeros_like(rt_test).reshape(-1, 1)
+b10_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b11_test     = np.zeros_like(rt_test).reshape(-1, 1)
+c1_test      = np.zeros_like(rt_test).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -621,6 +678,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -632,7 +693,7 @@ for i in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # fair value given by another pricing method
     F_op = np.zeros(num_samples_test) # HERE
@@ -656,6 +717,10 @@ kappa_test   = np.zeros_like(St_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(St_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(St_test).reshape(-1, 1)
 rho_test     = np.zeros_like(St_test).reshape(-1, 1)
+b0_test      = np.zeros_like(St_test).reshape(-1, 1)
+b10_test     = np.zeros_like(St_test).reshape(-1, 1)
+b11_test     = np.zeros_like(St_test).reshape(-1, 1)
+c1_test      = np.zeros_like(St_test).reshape(-1, 1)
 t_test       = np.zeros_like(St_test).reshape(-1, 1)
 K_test       = np.zeros_like(St_test).reshape(-1, 1)
 # values
@@ -664,6 +729,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -675,7 +744,7 @@ for i in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # fair value given by another pricing method
     F_op = np.zeros(num_samples_test) # HERE
@@ -690,7 +759,7 @@ for i in range(n):
     plt.ylabel('$u$')
     plt.savefig(Directory_name +"/" + plot_singleset_St_name + "__" + str(i) + ".png", bbox_inches='tight')
     plt.show()
-
+    
 #%% u_pred vs. St with a single set of parameters
 
 # state variables and parameters
@@ -700,6 +769,10 @@ kappa_test   = np.zeros_like(St_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(St_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(St_test).reshape(-1, 1)
 rho_test     = np.zeros_like(St_test).reshape(-1, 1)
+b0_test      = np.zeros_like(St_test).reshape(-1, 1)
+b10_test     = np.zeros_like(St_test).reshape(-1, 1)
+b11_test     = np.zeros_like(St_test).reshape(-1, 1)
+c1_test      = np.zeros_like(St_test).reshape(-1, 1)
 t_test       = np.zeros_like(St_test).reshape(-1, 1)
 K_test       = np.zeros_like(St_test).reshape(-1, 1)
 # values
@@ -708,6 +781,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -722,7 +799,7 @@ for i in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[i]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # plot of PINN price
     plt.plot(St_test, F_NN, label = "PINN price of network N{} at t = {}".format(i+1,int(t_test[0][0])))
@@ -743,6 +820,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, num_samples_test**2).reshape(
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, num_samples_test**2).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
 # scaling of state variables
@@ -762,7 +843,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
     # fair value given by another pricing method
@@ -801,6 +882,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, num_samples_test**2).reshape(
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, num_samples_test**2).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
 # scaling of state variables
@@ -819,7 +904,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)]])
+    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)], b0_test[500*k:500*(k+1)], b10_test[500*k:500*(k+1)], b11_test[500*k:500*(k+1)], c1_test[500*k:500*(k+1)]])
 
 F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
@@ -841,6 +926,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, num_samples_test**2).reshape(
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, num_samples_test**2).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
 # scaling of state variables
@@ -860,7 +949,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
     # fair value given by another pricing method
@@ -898,6 +987,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, num_samples_test**2).reshape(
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, num_samples_test**2).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
 # scaling of state variables
@@ -916,7 +1009,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)]])
+    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)], b0_test[500*k:500*(k+1)], b10_test[500*k:500*(k+1)], b11_test[500*k:500*(k+1)], c1_test[500*k:500*(k+1)]])
     
 F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
@@ -937,6 +1030,10 @@ kappa_test   = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(rt_test).reshape(-1, 1)
 rho_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b0_test      = np.zeros_like(rt_test).reshape(-1, 1)
+b10_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b11_test     = np.zeros_like(rt_test).reshape(-1, 1)
+c1_test      = np.zeros_like(rt_test).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -945,6 +1042,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -963,7 +1064,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
     # fair value given by another pricing method
@@ -1000,6 +1101,10 @@ kappa_test   = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(rt_test).reshape(-1, 1)
 rho_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b0_test      = np.zeros_like(rt_test).reshape(-1, 1)
+b10_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b11_test     = np.zeros_like(rt_test).reshape(-1, 1)
+c1_test      = np.zeros_like(rt_test).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -1008,6 +1113,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -1025,7 +1134,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)]])
+    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)], b0_test[500*k:500*(k+1)], b10_test[500*k:500*(k+1)], b11_test[500*k:500*(k+1)], c1_test[500*k:500*(k+1)]])
     
 F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
 # F_NN_array = F_NN_array[10:,:]
@@ -1048,6 +1157,10 @@ kappa_test   = np.zeros_like(St_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(St_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(St_test).reshape(-1, 1)
 rho_test     = np.zeros_like(St_test).reshape(-1, 1)
+b0_test      = np.zeros_like(St_test).reshape(-1, 1)
+b10_test     = np.zeros_like(St_test).reshape(-1, 1)
+b11_test     = np.zeros_like(St_test).reshape(-1, 1)
+c1_test      = np.zeros_like(St_test).reshape(-1, 1)
 t_test       = np.zeros_like(St_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -1056,6 +1169,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -1074,7 +1191,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN       = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
     # fair value given by another pricing method
@@ -1111,6 +1228,10 @@ kappa_test   = np.zeros_like(St_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(St_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(St_test).reshape(-1, 1)
 rho_test     = np.zeros_like(St_test).reshape(-1, 1)
+b0_test      = np.zeros_like(St_test).reshape(-1, 1)
+b10_test     = np.zeros_like(St_test).reshape(-1, 1)
+b11_test     = np.zeros_like(St_test).reshape(-1, 1)
+c1_test      = np.zeros_like(St_test).reshape(-1, 1)
 t_test       = np.zeros_like(St_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -1119,6 +1240,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -1136,7 +1261,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)]])
+    F_NN[500*k:500*(k+1)] = models_out[k]([t_tilde_test, rt_tilde_test[500*k:500*(k+1)], St_tilde_test[500*k:500*(k+1)], kappa_test[500*k:500*(k+1)], sigma_r_test[500*k:500*(k+1)], sigma_S_test[500*k:500*(k+1)], rho_test[500*k:500*(k+1)], b0_test[500*k:500*(k+1)], b10_test[500*k:500*(k+1)], b11_test[500*k:500*(k+1)], c1_test[500*k:500*(k+1)]])
     
 F_NN_array = np.array(F_NN).reshape(num_samples_test,num_samples_test)
     
@@ -1158,6 +1283,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, 2*num_samples_test**2).reshap
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, 2*num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, 2*num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, 2*num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, 2*num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, 2*num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, 2*num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, 2*num_samples_test**2).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
@@ -1175,7 +1304,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # fair value given by another pricing method
     F_op = np.zeros(2*num_samples_test**2) # HERE
@@ -1198,6 +1327,10 @@ kappa_test   = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_r_test = np.zeros_like(rt_test).reshape(-1, 1)
 sigma_S_test = np.zeros_like(rt_test).reshape(-1, 1)
 rho_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b0_test      = np.zeros_like(rt_test).reshape(-1, 1)
+b10_test     = np.zeros_like(rt_test).reshape(-1, 1)
+b11_test     = np.zeros_like(rt_test).reshape(-1, 1)
+c1_test      = np.zeros_like(rt_test).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 # values
@@ -1205,6 +1338,10 @@ kappa_test[:]   =  1.15
 sigma_r_test[:] =  0.01 
 sigma_S_test[:] =  0.025
 rho_test[:]     = -0.4
+b0_test[:]      =  0.04
+b10_test[:]     =  0.002
+b11_test[:]     = -0.018
+c1_test[:]      =  0.45 
 K_test[:]       =  K
 # scaling of state variables
 rt_tilde_test = ar+br*rt_test
@@ -1219,7 +1356,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # fair value given by another pricing method
     F_op = np.zeros(2*num_samples_test**2) # HERE
@@ -1242,6 +1379,10 @@ kappa_test   = np.random.uniform(kappa_l, kappa_u, 2*num_samples_test**2).reshap
 sigma_r_test = np.random.uniform(sigma_r_l, sigma_r_u, 2*num_samples_test**2).reshape(-1, 1)
 sigma_S_test = np.random.uniform(sigma_S_l, sigma_S_u, 2*num_samples_test**2).reshape(-1, 1)
 rho_test     = np.random.uniform(rho_l, rho_u, 2*num_samples_test**2).reshape(-1, 1)
+b0_test      = np.random.uniform(b0_l, b0_u, 2*num_samples_test**2).reshape(-1, 1)
+b10_test     = np.random.uniform(b10_l, b10_u, 2*num_samples_test**2).reshape(-1, 1)
+b11_test     = np.random.uniform(b11_l, b11_u, 2*num_samples_test**2).reshape(-1, 1)
+c1_test      = np.random.uniform(c1_l, c1_u, 2*num_samples_test**2).reshape(-1, 1)
 t_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test       = np.zeros_like(rt_test).reshape(-1, 1)
 K_test[:]    = K
@@ -1259,7 +1400,7 @@ for k in range(n):
     t_tilde_test  = ah+bh*t_test
     
     # fair value given by the neural network
-    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test])
+    F_NN = models_out[k]([t_tilde_test, rt_tilde_test, St_tilde_test, kappa_test, sigma_r_test, sigma_S_test, rho_test, b0_test, b10_test, b11_test, c1_test])
     
     # fair value given by another pricing method
     F_op = np.ones(2*num_samples_test**2) # HERE
@@ -1287,7 +1428,7 @@ exists_resloc = os.path.exists(Directory_name +"/" +'results.csv')
 if not exists_resloc:
     with open(Directory_name +"/" +'results.csv', 'w', newline='') as file:
           writer = csv.writer(file, delimiter=';')
-          writer.writerow(["Configuration","Weighted Loss", "Inner Loss", "Exercise Loss", "Lower Loss", "Total Loss",
+          writer.writerow(["Configuration","Weighted Loss", "Inner Loss", "Maturity Loss", "Lower Loss", "Total Loss",
                           "MSE_alea_rt", "MSE_alea_St", "MSE_conf_rt", "MSE_conf_St", "MSE_alea", 
                           "MSE_conf",  "relative error (in the money)", "Training time [sec]", "TRAIN"])
           writer.writerow([Directory_name, round(loss_tab[:,0][-1], 6) , round(loss_tab[:,1][-1], 6),
@@ -1304,11 +1445,11 @@ else:
          
 #%% Saving outputs in a csv file countaning outputs of all neural networks
 
-exists_resall = os.path.exists('Berm_results_all.csv')
+exists_resall = os.path.exists('Berm_multi_results_all.csv')
 if not exists_resall:
-    with open('Berm_results_all.csv', 'w', newline='') as file:
+    with open('Berm_multi_results_all.csv', 'w', newline='') as file:
           writer = csv.writer(file, delimiter=';')
-          writer.writerow(["Configuration","Weighted Loss", "Inner Loss", "Exercise Loss", "Lower Loss", "Total Loss",
+          writer.writerow(["Configuration","Weighted Loss", "Inner Loss", "Maturity Loss", "Lower Loss", "Total Loss",
                           "MSE_alea_rt", "MSE_alea_St", "MSE_conf_rt", "MSE_conf_St", "MSE_alea", 
                           "MSE_conf",  "relative error (in the money)", "Training time [sec]", "TRAIN"])
           writer.writerow([Directory_name, round(loss_tab[:,0][-1], 6) , round(loss_tab[:,1][-1], 6),
@@ -1316,7 +1457,7 @@ if not exists_resall:
                           round(MSE[1], 6), round(MSE[2], 6), round(MSE[3], 6), round(MSE[4], 6), 
                           round(MSE[5], 6), round(MSE[6], 6), int(sum(train_times)), TRAIN])
 else:
-    with open('Berm_results_all.csv', 'a', newline='') as file:
+    with open('Berm_multi_results_all.csv', 'a', newline='') as file:
           writer = csv.writer(file, delimiter=';')
           writer.writerow([Directory_name, round(loss_tab[:,0][-1], 6) , round(loss_tab[:,1][-1], 6),
                           round(loss_tab[:,2][-1], 6), round(loss_tab[:,3][-1], 6), round(loss_tab[:,4][-1], 6), round(MSE[0], 6),  
